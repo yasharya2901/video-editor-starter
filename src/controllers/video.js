@@ -42,7 +42,7 @@ const uploadVideo = async (req, res, handleErr) => {
         DB.videos.unshift({
             id: DB.videos.length,
             videoId,
-            name: util.sanitizeFileName(fileName),
+            name: fileName,
             extension,
             dimensions,
             userId: req.userId,
@@ -106,7 +106,7 @@ const getVideoAsset = async (req, res, handleErr) => {
                     })
                 }
                 mimeType = "audio/aac"
-                fileName = `${video.name}-audio.aac}`;
+                fileName = `${video.name}-audio.aac`;
                 break;
                 
             case "resize":
@@ -142,11 +142,10 @@ const getVideoAsset = async (req, res, handleErr) => {
     
         res.setHeader("Content-Type", mimeType);
         if (type !== "thumbnail") {
-            res.setHeader("Content-Disposition", `attachment; filename=${fileName}`); // To make the file downloadable
+            res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`); // To make the file downloadable
         }
         res.setHeader("Content-Length", stat.size);
         res.status(200);
-        console.log("alright till here")
         await pipeline(fileStream, res);
     } catch (error) {
         console.log(error)
@@ -156,10 +155,46 @@ const getVideoAsset = async (req, res, handleErr) => {
         file.close();
     }
 }
+
+const extractAudio = async (req, res, handleErr) => {
+    const videoId = req.params.get("videoId");
+    DB.update();
+
+    const video = DB.videos.find((video) => video.videoId === videoId);
+    if (!video) {
+        return handleErr({
+            status: 404,
+            message: "Video not found"
+        });
+    }
+
+    if (video.extractedAudio) {
+        return handleErr({
+            status: 400,
+            message: "The audio has already been extracted for this video."
+        });
+    }
+    const originalVideoPath = `./storage/${videoId}/original.${video.extension}`;
+    const targetAudioPath = `./storage/${videoId}/audio.aac`;
+    try {
+        await FF.extractAudio(originalVideoPath, targetAudioPath);
+        video.extractedAudio = true;
+        DB.save();
+
+        res.status(200).json({
+            status: "success",
+            message: "The audio was extracted successfully!"
+        })
+    } catch (error) {
+        util.deleteFile(targetAudioPath);
+        return handleErr(error);
+    }
+}
 const controller = {
     getVideos,
     uploadVideo,
-    getVideoAsset
+    getVideoAsset,
+    extractAudio
 }
 
 module.exports = controller;
